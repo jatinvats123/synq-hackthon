@@ -4,7 +4,8 @@
  * a decision record that a human can reconstruct end to end without reading code.
  */
 const { selectReplacement } = require('./replacement');
-const { planSla, planVertexGate, planOrionColdChain, checkDriver, monthOf, hourOf } = require('../rules/engine');
+const { planSla, planVertexGate, planOrionColdChain, checkDriver, monthOf, hourOf, evaluateVehicle } = require('../rules/engine');
+const { vehicleStateAsOf } = require('../resolve/vehicles');
 
 /** Map the free-text issue onto a recovery posture. */
 const ISSUE_CLASSES = {
@@ -78,9 +79,11 @@ function decideTicket(ctx, accepted, incidents) {
 
   // The failed vehicle itself: which rules would now bar it from re-dispatch. This
   // is what tells the workshop whether it is a repair-and-return or a grounding.
-  const failedVehicleChecks = require('../rules/engine').evaluateVehicle(
-    ctx, v, { ...route, exclude_reg_key: null }, incidents
-  );
+  const failedVehicleChecks = evaluateVehicle(ctx, v, { ...route, exclude_reg_key: null }, incidents);
+  // Same as-of-the-ticket snapshot the checks above actually reasoned about, so the
+  // reported "last workshop visit" / "open jugaad" never shows a later, not-yet-
+  // happened maintenance event that the rule evaluation itself correctly ignored.
+  const vAsOf = vehicleStateAsOf(v, route.when);
 
   const planChecks = [...sla.checks, vertexGate, orionCold, driverCheck];
   const actionable = planChecks.filter((c) => c.verdict === 'FAIL');
@@ -111,12 +114,20 @@ function decideTicket(ctx, accepted, incidents) {
       registration: v.registration,
       blocking_rules: failedVehicleChecks.blocking.map((b) => ({ rule_id: b.rule_id, because: b.because })),
       unknown_rules: failedVehicleChecks.unknown.map((u) => ({ rule_id: u.rule_id, because: u.because })),
-      open_jugaad: v.open_jugaad ? { date: v.open_jugaad.date, citation: v.open_jugaad.citation } : null,
-      last_workshop_visit: v.last_workshop_visit,
+      open_jugaad: vAsOf.open_jugaad ? { date: vAsOf.open_jugaad.date, citation: vAsOf.open_jugaad.citation } : null,
+      last_workshop_visit: vAsOf.last_workshop_visit,
       odometer_trusted: v.odometer_trusted !== false,
     },
     actions,
-    needs_human: replacement.outcome === 'NO_ELIGIBLE_VEHICLE' || actionable.length > 0,
+    // A selection that rests on a hard rule returning INSUFFICIENT_DATA (no fully
+    // clean candidate existed, so the least-bad option was used - see
+    // rankCandidates/eligible_with_caveats) is not a routine dispatch: the system
+    // does not actually know the vehicle satisfies every hard rule, it only knows
+    // nothing contradicts it. That is a judgment call a human should see, not a
+    // silent DISPATCHED status indistinguishable from a fully-clean pick.
+    needs_human: replacement.outcome === 'NO_ELIGIBLE_VEHICLE'
+      || actionable.length > 0
+      || (replacement.outcome === 'SELECTED' && replacement.selected.unknowns.length > 0),
     // Every citation this decision rests on, de-duplicated and sorted.
     citations: collectCitations({ accepted, v, replacement, planChecks }),
     assumptions_used: collectAssumptions({ replacement, planChecks }),

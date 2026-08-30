@@ -151,7 +151,13 @@ function selectReplacement(ctx, route, incidents) {
       engine_heater: chosen.vehicle.engine_heater,
       capacity_tonnes: chosen.vehicle.capacity_tonnes,
       fully_eligible: chosen.eligible,
+      // Precise, not blanket: which specific checks (if any) rest on an assumption,
+      // and whether that assumption is actually close to flipping the verdict for
+      // this vehicle. See src/rules/engine.js evaluateVehicle for why this replaced
+      // a single "rests_on_assumption" boolean.
       rests_on_assumption: chosen.derived_used,
+      derived_checks: chosen.derived_checks,
+      has_borderline_assumption: chosen.has_borderline_assumption,
       unknowns: chosen.unknown.map((u) => ({ rule_id: u.rule_id, because: u.because })),
       checks: chosen.checks,
       citations: dedupe([

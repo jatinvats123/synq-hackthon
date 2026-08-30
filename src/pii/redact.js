@@ -164,9 +164,19 @@ function scrub(text) {
  * redundant with `redact` - the point is that a bug in an enrichment step that
  * reintroduces a raw value gets caught here rather than in the client's inbox.
  */
-function findViolations(text) {
+/**
+ * Final gate. `allow` is a short, explicit list of known business routing
+ * addresses (client role mailboxes from config/rulebook.json - see ASM-008) that
+ * are permitted to appear verbatim. This is not a blanket exemption: it only
+ * strips the exact strings supplied by the caller, so a personal address that
+ * happens to share a domain still trips the detector. The allowlist has to be
+ * passed in by the caller (never inferred from the text itself), so there is no
+ * way for a rogue value to get itself allowed.
+ */
+function findViolations(text, { allow = [] } = {}) {
   if (text == null) return [];
-  const s = String(text);
+  let s = String(text);
+  for (const a of allow) if (a) s = s.split(a).join('');
   const found = [];
   for (const d of DETECTORS) {
     d.re.lastIndex = 0;
