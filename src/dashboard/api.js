@@ -204,6 +204,27 @@ function getRules(rootDir) {
 }
 
 // ---------------------------------------------------------------------------
+// Context / entity resolution
+// ---------------------------------------------------------------------------
+/**
+ * The entity-resolution report: how many raw fleet rows collapsed into how many
+ * real vehicles, every conflict that had to be resolved and how, and email
+ * thread de-duplication. Written by src/context/store.js on every pipeline run
+ * (data/context.json) - this just serves it back, already PII-clean since the
+ * context layer never stores a raw name/phone/DL/Aadhaar in the first place.
+ */
+function getContext(rootDir) {
+  const context = readJsonIfExists(path.join(rootDir, 'data', 'context.json'), null);
+  if (!context) return null;
+  return {
+    as_of: context.as_of,
+    stats: context.stats,
+    conflicts: context.conflicts,
+    email_claims: context.email_claims.filter((c) => c.duplication),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------
 function getHealth(rootDir) {
@@ -244,5 +265,5 @@ function getHealth(rootDir) {
 
 module.exports = {
   getOverview, getWorkOrders, getWorkOrderDetail, getPending, getSent, approveTicket,
-  getQuarantine, getAudit, getRules, getHealth, lightweightCtx, loadLedger, lastRunInfo,
+  getQuarantine, getAudit, getRules, getContext, getHealth, lightweightCtx, loadLedger, lastRunInfo,
 };
