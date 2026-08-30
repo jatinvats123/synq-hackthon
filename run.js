@@ -9,27 +9,28 @@
  *   node run.js approve         re-run (cheap, deterministic) then just approve
  *   node run.js pii-scan        report name-shaped tokens the redactor may be missing
  *   node run.js reset           wipe state/ledger.json (start the ledger over)
- *   node run.js dashboard       serve a live-reading dashboard at http://localhost:3000
+ *   node run.js dashboard       serve the live verification dashboard at http://localhost:3000
+ *   node run.js selftest        run every verification test (see src/verify/) and print PASS/FAIL
  *
  * Flags:
  *   --as-of YYYY-MM-DD   evaluate recency rules as of this date (default: config)
  *   --data-dir <path>    where the client bundle lives (default: this directory)
  *   --quiet              suppress info-level console output (warnings still show)
  *   --port <n>           dashboard port (default 3000)
+ *
+ * The actual pipeline logic (ingest -> validate -> decide -> ledger -> outputs) is
+ * in src/pipeline/orchestrator.js, so the dashboard and the verification test
+ * harness can drive it directly rather than shelling out to this CLI.
  */
 const fs = require('fs');
 const path = require('path');
-const readline = require('readline');
 
 const { Logger } = require('./src/lib/log');
-const { buildContext, saveContext } = require('./src/context/store');
-const { readTickets } = require('./src/ingest/tickets');
-const { validateBatch } = require('./src/pipeline/validate');
-const { decideTicket, buildIncidentIndex } = require('./src/pipeline/decide');
+const { runOnce, materialiseOutputsAt } = require('./src/pipeline/orchestrator');
 const ledgerMod = require('./src/pipeline/ledger');
 const emit = require('./src/pipeline/emit');
 const { runApprovalSession } = require('./src/pipeline/approve');
-const { writeJsonl, ensureDir } = require('./src/lib/util');
+const { ensureDir } = require('./src/lib/util');
 const { collectNames, scanUncovered } = require('./src/pii/names');
 
 const ROOT = __dirname;
@@ -55,56 +56,6 @@ function timestampSlug() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
-/** Reconstruct a ledger's accepted tickets into the shape buildIncidentIndex expects. */
-function ledgerAsIncidentSeeds(ledger) {
-  return Object.keys(ledger.accepted).sort().map((ticketId) => {
-    const entry = ledger.accepted[ticketId];
-    const d = entry.decision;
-    return {
-      ticket: { ticket_id: ticketId, client: d.client, created_at: d.created_at, _ingest: { citation: entry.first_seen_source } },
-      validation: { resolved: { reg_key: d.vehicle_reg_key } },
-    };
-  });
-}
-
-/** Build and write the four outputs/ files plus audit/audit.jsonl from the ledger. */
-function materialiseOutputs(ledger, ctx, log) {
-  const workOrders = emit.buildWorkOrders(ledger);
-  const commsPending = emit.buildCommsPending(ledger, ctx.config.rulebook);
-  const commsSent = emit.buildCommsSent(ledger);
-  const quarantineRows = emit.buildQuarantine(ledger);
-  const auditRows = emit.buildAuditRows(ledger);
-
-  // Client role mailboxes (config/rulebook.json) are routing addresses, not
-  // personal data - see ASM-008. They are the only emails allowed anywhere in
-  // an output; the allowlist is built from config, never from the row being
-  // checked, so nothing can allow itself through.
-  const allowedEmails = Object.values(ctx.config.rulebook.clients)
-    .map((c) => c.role_mailbox)
-    .filter(Boolean);
-
-  // The hard gate. If this throws, nothing is written - a partial write with a
-  // leak in it is worse than a run that visibly failed.
-  emit.assertClean(workOrders, 'work_orders');
-  emit.assertClean(commsPending, 'comms_pending', { allowedEmails });
-  emit.assertClean(commsSent, 'comms_sent', { allowedEmails });
-  emit.assertClean(quarantineRows, 'quarantine');
-  emit.assertClean(auditRows, 'audit');
-
-  writeJsonl(path.join(ROOT, 'outputs', 'work_orders.jsonl'), workOrders);
-  writeJsonl(path.join(ROOT, 'outputs', 'comms_pending.jsonl'), commsPending);
-  writeJsonl(path.join(ROOT, 'outputs', 'comms_sent.jsonl'), commsSent);
-  writeJsonl(path.join(ROOT, 'outputs', 'quarantine.jsonl'), quarantineRows);
-  writeJsonl(path.join(ROOT, 'audit', 'audit.jsonl'), auditRows);
-
-  log.info('outputs.written', {
-    work_orders: workOrders.length, comms_pending: commsPending.length,
-    comms_sent: commsSent.length, quarantine: quarantineRows.length, audit_rows: auditRows.length,
-  });
-
-  return { workOrders, commsPending, commsSent, quarantineRows, auditRows };
-}
-
 async function commandAll(flags, log) {
   const dataDir = flags.dataDir || ROOT;
   const ticketsPath = flags.tickets || path.join(dataDir, 'tickets.json');
@@ -115,24 +66,10 @@ async function commandAll(flags, log) {
     return;
   }
 
-  const ctx = buildContext({ dataDir, log, asOf: flags.asOf || null });
-  saveContext(ctx, path.join(ROOT, 'data', 'context.json'));
-
-  const { tickets, format } = readTickets(ticketsPath, log);
-  const { accepted, quarantine, duplicates } = validateBatch(tickets, ctx, log);
-
-  const ledger = ledgerMod.loadLedger();
-  const incidents = buildIncidentIndex([...ledgerAsIncidentSeeds(ledger), ...accepted]);
-
-  const changes = ledgerMod.mergeBatch(
-    ledger, { accepted, quarantine },
-    (a) => decideTicket(ctx, a, incidents),
-    log
-  );
-  ledgerMod.saveLedger(ledger);
+  const { ledger, changes, commsPending, ctx } = runOnce({ dataDir, ticketsPath, outDir: ROOT, asOf: flags.asOf || null, log });
 
   log.info('ledger.merged', {
-    file: path.basename(ticketsPath), format,
+    file: path.basename(ticketsPath),
     newly_accepted: changes.newly_accepted.length,
     newly_quarantined: changes.newly_quarantined.length,
     recovered_from_quarantine: changes.recovered.length,
@@ -141,13 +78,11 @@ async function commandAll(flags, log) {
     ledger_total_quarantined: Object.keys(ledger.quarantine).length,
   });
 
-  let { commsPending } = materialiseOutputs(ledger, ctx, log);
-
   if (flags.approve) {
     const pendingAfter = emit.buildCommsPending(ledger, ctx.config.rulebook);
     await runApprovalSession(pendingAfter, ledger, { approverName: flags.approverName || null });
     ledgerMod.saveLedger(ledger);
-    materialiseOutputs(ledger, ctx, log);
+    materialiseOutputsAt(ledger, ctx, log, ROOT);
   }
 
   printSummary(ledger, changes, log);
@@ -179,6 +114,13 @@ function commandPiiScan(flags, log) {
     log.say(`  ${u.preview}  (len ${u.length}, seen ${u.occurrences}x)`);
   }
   if (uncovered.length === 0) log.say('  none - every capitalised name-shaped token is already covered.');
+}
+
+async function commandSelftest(flags, log) {
+  const { runAllTests, formatReport } = require('./src/verify/tests');
+  const results = await runAllTests({ rootDir: ROOT, log });
+  log.say(formatReport(results));
+  process.exitCode = results.some((r) => !r.pass) ? 1 : 0;
 }
 
 function printSummary(ledger, changes, log) {
@@ -222,9 +164,10 @@ async function main() {
     else if (command === 'approve') await commandApprove(flags, log);
     else if (command === 'reset') commandReset(log);
     else if (command === 'pii-scan') commandPiiScan(flags, log);
+    else if (command === 'selftest') await commandSelftest(flags, log);
     else if (command === 'dashboard') { require('./src/dashboard/server').startServer(flags.port || 3000); return; }
     else {
-      log.say(`Unknown command "${command}". Use: all | approve | reset | pii-scan | dashboard`);
+      log.say(`Unknown command "${command}". Use: all | approve | reset | pii-scan | selftest | dashboard`);
       process.exitCode = 1;
     }
   } catch (err) {
@@ -235,4 +178,4 @@ async function main() {
 
 if (require.main === module) main();
 
-module.exports = { parseArgs, materialiseOutputs, ledgerAsIncidentSeeds };
+module.exports = { parseArgs };

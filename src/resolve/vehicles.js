@@ -133,6 +133,14 @@ function attachMaintenance(vehicles, maintenanceRecords, log) {
 
     v.maintenance_count = rows.length;
     v.maintenance_citations = rows.map((r) => r.citation);
+    // The full, date-sorted history, kept alongside the "current" snapshot below.
+    // Rule checks that ask a time-bound question ("was there brake work in the
+    // last 30 days", "is a jugaad fix still open") must answer it as of the
+    // ticket's own timestamp, not as of the end of the maintenance log - a March
+    // 2026 ticket cannot be affected by a repair recorded in July 2026. See
+    // vehicleStateAsOf below, which every such rule check calls instead of
+    // reading these vehicle-wide fields directly.
+    v.maintenance_history = rows;
 
     const last = rows[rows.length - 1];
     v.last_workshop_visit = last ? { date: last.date, citation: last.citation } : null;
@@ -231,6 +239,49 @@ function attachMaintenance(vehicles, maintenanceRecords, log) {
 }
 
 /** Attach trip history, used for client-familiarity signals and utilisation. */
+/**
+ * Recompute a vehicle's time-bound maintenance facts as of a given timestamp,
+ * using only the maintenance rows that had actually happened by then.
+ *
+ * `vehicle.last_workshop_visit`, `.last_brake_work` and `.open_jugaad` (attached
+ * by attachMaintenance above) are the vehicle's *current* state - correct for
+ * questions like "is this vehicle usable right now" but wrong for a rule that has
+ * to answer "was this vehicle eligible at the moment ticket X was raised", because
+ * tickets and maintenance events are both scattered across the same ~18-month
+ * window and interleave per vehicle. Evaluating a rule against a fact that, on the
+ * calendar, hadn't happened yet is not a data-quality footnote; it is answering a
+ * different question than the one the rule asks.
+ *
+ * Static attributes (bs_stage, year, engine_heater, home_hub, status) are not
+ * time-bound in this dataset and are returned unchanged.
+ */
+function vehicleStateAsOf(vehicle, whenIso) {
+  const cutoff = String(whenIso || '').slice(0, 10);
+  const history = vehicle.maintenance_history || [];
+  if (!cutoff) return vehicle; // no timestamp to bound by - caller has bigger problems
+
+  const priorRows = history.filter((r) => (r.date || '') <= cutoff);
+  if (priorRows.length === history.length) return vehicle; // nothing in the future; no adjustment needed
+
+  const last = priorRows[priorRows.length - 1] || null;
+  const brakeRows = priorRows.filter((r) => r.brake_work);
+  let openJugaad = null;
+  for (const r of priorRows) {
+    if (r.jugaad) openJugaad = { date: r.date, citation: r.citation, note: r.notes };
+    else if (r.permanent_repair && openJugaad) openJugaad = null;
+  }
+
+  return {
+    ...vehicle,
+    as_of: cutoff,
+    as_of_adjusted: true, // signals that future-relative-to-this-ticket rows were excluded
+    maintenance_count_as_of: priorRows.length,
+    last_workshop_visit: last ? { date: last.date, citation: last.citation } : null,
+    last_brake_work: brakeRows.length ? { date: brakeRows[brakeRows.length - 1].date, citation: brakeRows[brakeRows.length - 1].citation } : null,
+    open_jugaad: openJugaad,
+  };
+}
+
 function attachTrips(vehicles, tripRecords, log) {
   let orphans = 0;
   for (const t of tripRecords) {
@@ -251,4 +302,4 @@ function attachTrips(vehicles, tripRecords, log) {
   return orphans;
 }
 
-module.exports = { resolveVehicles, attachMaintenance, attachTrips };
+module.exports = { resolveVehicles, attachMaintenance, attachTrips, vehicleStateAsOf };

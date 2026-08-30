@@ -35,7 +35,20 @@ function buildWorkOrder(ticketId, entry) {
     origin_hub: d.route.origin_hub,
     destination: d.route.destination,
     replacement: d.replacement.outcome === 'SELECTED'
-      ? { registration: d.replacement.selected.registration, from_hub: d.replacement.selected.from_hub, rests_on_assumption: d.replacement.selected.rests_on_assumption }
+      ? {
+          registration: d.replacement.selected.registration,
+          from_hub: d.replacement.selected.from_hub,
+          rests_on_assumption: d.replacement.selected.rests_on_assumption,
+          // Which specific check(s) are derived and why, not a blanket flag - see
+          // engine.js evaluateVehicle. Empty array means every hard rule that fired
+          // is grounded in a real fleet_master/maintenance_log/ticket citation.
+          derived_checks: d.replacement.selected.derived_checks,
+          has_borderline_assumption: d.replacement.selected.has_borderline_assumption,
+          // Hard rules that returned INSUFFICIENT_DATA for this vehicle - not a
+          // violation, but not confirmed clean either. Non-empty means no fully
+          // clean candidate existed and this was the least-bad option.
+          unknowns: d.replacement.selected.unknowns,
+        }
       : null,
     status: d.replacement.outcome === 'SELECTED' ? (d.needs_human ? 'DISPATCHED_WITH_CONSTRAINTS' : 'DISPATCHED') : 'ESCALATED_NO_VEHICLE',
     needs_human_review: d.needs_human,
@@ -170,6 +183,7 @@ function buildQuarantine(ledger) {
         quarantine_id: qid,
         ticket_id: q.ticket_id,
         reasons: q.reasons,
+        reason_codes: q.reason_codes,
         findings: q.findings,
         occurrences: q.occurrences,
         source_citations: q.all_citations,
@@ -213,6 +227,21 @@ function buildAuditRows(ledger) {
         citations: check.citations, assumptions: check.assumptions,
       });
     }
+    // Vehicle-eligibility rules (R-001/002/003/006/007/011/012) that gated the
+    // SELECTED vehicle specifically - the rules that actually decided "why this
+    // truck and not another". Rejected candidates at other hubs are summarised in
+    // REPLACEMENT_SOURCING's hub tally rather than audited check-by-check, which
+    // would be dozens of rows of noise for candidates that were never dispatched.
+    if (d.replacement.outcome === 'SELECTED') {
+      for (const check of d.replacement.selected.checks) {
+        push(ticketId, 'RULE_EVALUATED', {
+          rule_id: check.rule_id, rule_name: check.rule_name, verdict: check.verdict,
+          because: check.because, hard: check.hard, derived: check.derived,
+          citations: check.citations, assumptions: check.assumptions,
+          applies_to: 'selected_replacement',
+        });
+      }
+    }
 
     push(ticketId, 'REPLACEMENT_SOURCING', {
       rule_id: d.replacement.sourcing.rule_id, basis: d.replacement.sourcing.basis,
@@ -222,6 +251,8 @@ function buildAuditRows(ledger) {
       push(ticketId, 'REPLACEMENT_SELECTED', {
         registration: d.replacement.selected.registration, from_hub: d.replacement.selected.from_hub,
         fully_eligible: d.replacement.selected.fully_eligible, rests_on_assumption: d.replacement.selected.rests_on_assumption,
+        derived_checks: d.replacement.selected.derived_checks.map((c) => c.rule_id),
+        has_borderline_assumption: d.replacement.selected.has_borderline_assumption,
         citations: d.replacement.selected.citations,
       });
     } else {

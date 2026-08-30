@@ -28,7 +28,7 @@ const { sha256 } = require('../lib/util');
  */
 const ALIASES = {
   ticket_id: ['ticketid', 'id', 'ticketno', 'ticketnumber', 'ticketref', 'reference', 'refno', 'caseid', 'incidentid'],
-  created_at: ['createdat', 'created', 'createdon', 'timestamp', 'time', 'datetime', 'date', 'reportedat', 'raisedat', 'openedat', 'eventtime'],
+  created_at: ['createdat', 'created', 'createdon', 'timestamp', 'time', 'datetime', 'date', 'reportedat', 'raisedat', 'openedat', 'eventtime', 'whenraised', 'raisedon', 'loggedat', 'occurredat', 'incidentat', 'when'],
   vehicle: ['vehicle', 'vehiclereg', 'vehicleregistration', 'registration', 'registrationnumber', 'reg', 'regno', 'truck', 'truckno', 'plate', 'platenumber', 'vehicleno', 'vehiclenumber'],
   driver_id: ['driverid', 'driver', 'driverref', 'drivercode', 'drivernumber'],
   origin_hub: ['originhub', 'origin', 'source', 'sourcehub', 'fromhub', 'from', 'startinghub', 'basehub', 'hub'],

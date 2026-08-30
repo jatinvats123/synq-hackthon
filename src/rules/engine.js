@@ -18,6 +18,7 @@
  * exercise, so it is modelled explicitly rather than collapsed into a boolean.
  */
 const { daysBetween } = require('../context/store');
+const { vehicleStateAsOf } = require('../resolve/vehicles');
 
 function monthOf(isoTs) {
   const m = /^(\d{4})-(\d{2})/.exec(String(isoTs || ''));
@@ -203,10 +204,18 @@ function checkR011(ctx, vehicle, route) {
     return result(rule, 'INSUFFICIENT_DATA', 'last workshop visit date could not be compared to the dispatch date');
   }
   const grounded = overdueBy > rule.params.grace_days;
+  // How much slack is left before the assumed interval would need to shrink for
+  // this verdict to flip. A wide margin means the ASM-001 assumption is inert for
+  // this vehicle - the verdict would hold under almost any reasonable interval
+  // guess. A narrow margin means this specific verdict genuinely rests on the
+  // assumed number and deserves a human's attention, not a blanket "assumption"
+  // label applied identically to every vehicle regardless of how much it matters.
+  const marginDays = rule.params.grace_days - overdueBy;
+  const borderline = !grounded && marginDays <= 15;
   return result(rule, grounded ? 'FAIL' : 'PASS',
     grounded
       ? `derived service due date is ${overdueBy} days past, beyond the ${rule.params.grace_days}-day grace period; treated as grounded`
-      : `${sinceService} days since last workshop visit; within the derived ${intervalDays}-day interval plus ${rule.params.grace_days}-day grace`,
+      : `${sinceService} days since last workshop visit; within the derived ${intervalDays}-day interval plus ${rule.params.grace_days}-day grace${borderline ? ` (only ${marginDays} days of margin - this verdict is close to the line)` : ''}`,
     {
       derived: true, // the due date is assumed, not observed - see ASM-001
       evidence: {
@@ -214,6 +223,8 @@ function checkR011(ctx, vehicle, route) {
         days_since_service: sinceService,
         assumed_interval_days: intervalDays,
         overdue_by_days: overdueBy,
+        margin_days: marginDays,
+        borderline,
         citation: vehicle.last_workshop_visit.citation,
         caveat: 'Service due date is derived from ASM-001, not observed. No source in the bundle contains one.',
       },
@@ -270,18 +281,40 @@ function checkAvailability(ctx, vehicle, route) {
  * an unknown is not a pass.
  */
 function evaluateVehicle(ctx, vehicle, route, incidents) {
+  // Time-bound facts (last brake work, open jugaad fix, last workshop visit) must
+  // be evaluated as of THIS ticket's timestamp, not as of the end of the
+  // maintenance log - tickets and maintenance events interleave across the same
+  // window, so using the vehicle's all-time-latest event would let a repair from
+  // months after this incident decide whether the vehicle was eligible for it.
+  // Static attributes (bs_stage, year, engine_heater, status) are unaffected by
+  // time in this dataset, so checks that only need those still take `vehicle`.
+  const asOf = vehicleStateAsOf(vehicle, route.when);
   const checks = [
     checkAvailability(ctx, vehicle, route),
     checkR001(ctx, vehicle, route),
     checkR002(ctx, vehicle, route),
-    checkR003(ctx, vehicle, route),
+    checkR003(ctx, asOf, route),
     checkR006(ctx, vehicle, route, incidents),
     checkR007(ctx, vehicle, route),
-    checkR011(ctx, vehicle, route),
-    checkR012(ctx, vehicle, route),
+    checkR011(ctx, asOf, route),
+    checkR012(ctx, asOf, route),
   ];
   const blocking = checks.filter((c) => c.hard && c.verdict === 'FAIL');
   const unknown = checks.filter((c) => c.hard && c.verdict === 'INSUFFICIENT_DATA');
+  // Precisely which checks rest on an assumption, and why - not a single opaque
+  // boolean. A vehicle can have exactly one derived check (almost always R-011,
+  // because no source has a service due date) while every other check is fully
+  // grounded in a real fleet_master/maintenance_log/ticket citation. Collapsing
+  // that into "rests_on_assumption: true" made every selection look equally
+  // uncertain, which overstates the real gap. borderline flags the rarer case
+  // where the assumption is actually load-bearing for this specific vehicle.
+  const derivedChecks = checks
+    .filter((c) => c.derived && c.verdict !== 'NOT_APPLICABLE')
+    .map((c) => ({
+      rule_id: c.rule_id, rule_name: c.rule_name, verdict: c.verdict,
+      assumptions: c.assumptions, because: c.because,
+      borderline: !!(c.evidence && c.evidence.borderline),
+    }));
   return {
     reg_key: vehicle.reg_key,
     registration: vehicle.registration,
@@ -290,7 +323,9 @@ function evaluateVehicle(ctx, vehicle, route, incidents) {
     unknown,
     eligible: blocking.length === 0 && unknown.length === 0,
     eligible_with_caveats: blocking.length === 0 && unknown.length > 0,
-    derived_used: checks.some((c) => c.derived && c.verdict !== 'NOT_APPLICABLE'),
+    derived_checks: derivedChecks,
+    derived_used: derivedChecks.length > 0,
+    has_borderline_assumption: derivedChecks.some((c) => c.borderline),
   };
 }
 
