@@ -1,0 +1,195 @@
+{
+  "$comment": "The retiring senior dispatch manager's operating rules, extracted from the knowledge-capture interview and cross-checked against the client email corpus. Rules live here as data, not as code, because they belong to the client and will change after he leaves. Every rule carries the exact source lines it came from; the pipeline copies those citations into the audit trail of any decision the rule fires on. `hard: true` means the rule blocks dispatch outright - the dispatcher's word for it is 'absolute'.",
+
+  "rules": [
+    {
+      "id": "R-001",
+      "name": "BS4 barred from Delhi NCR routes in winter",
+      "hard": true,
+      "scope": "vehicle_eligibility",
+      "statement": "October to February inclusive, no BS4 vehicle may run any route whose origin or destination touches Delhi NCR. BS6 only.",
+      "params": { "months": [10, 11, 12, 1, 2], "bs_stage_required": "BS6", "region": "delhi_ncr" },
+      "citations": ["dispatcher_interview.txt:L14"],
+      "corroboration": [],
+      "rationale": "GRAP pollution enforcement. Two trucks held at Kundli for 36 hours in 2022 on a Shakti load.",
+      "assumptions": ["ASM-004"]
+    },
+    {
+      "id": "R-002",
+      "name": "Hill routes require an engine heater in winter",
+      "hard": true,
+      "scope": "vehicle_eligibility",
+      "statement": "November to February inclusive, a vehicle on a hill route must have an engine heater.",
+      "params": { "months": [11, 12, 1, 2], "requires": "engine_heater", "region": "hill" },
+      "citations": ["dispatcher_interview.txt:L18"],
+      "rationale": "Cold start at altitude before dawn without a heater is a gamble.",
+      "assumptions": ["ASM-005"]
+    },
+    {
+      "id": "R-003",
+      "name": "No recent brake work on hill routes",
+      "hard": true,
+      "scope": "vehicle_eligibility",
+      "statement": "A vehicle with any brake work (pad, drum, anything) recorded in the last 30 days may not be sent on a hill route. Thirty days of flat running first.",
+      "params": { "window_days": 30, "region": "hill", "months": [11, 12, 1, 2] },
+      "citations": ["dispatcher_interview.txt:L18"],
+      "rationale": "A bad brake job shows up on a flat road as an embarrassed phone call and on a ghat road as a newspaper item.",
+      "assumptions": ["ASM-005"]
+    },
+    {
+      "id": "R-004",
+      "name": "Shakti Cement runs to a 36-hour window",
+      "hard": false,
+      "scope": "client_sla",
+      "statement": "Plan every Shakti Cement load to 36 hours door to door. The 48-hour figure in the contract is legacy language and must not be used for planning or quoted to the client.",
+      "params": { "client": "Shakti Cement", "sla_hours": 36, "contract_hours": 48 },
+      "citations": ["dispatcher_interview.txt:L22", "dispatcher_interview.txt:L54"],
+      "corroboration": ["emails/thread_01_shakti_sla.txt:L8", "emails/thread_02_shakti_sla.txt:L8"],
+      "rationale": "Crossing 36 hours triggers a call from their plant head to Meridian's MD. Named by the dispatcher as one of the three rules he would keep if he could keep only three.",
+      "assumptions": []
+    },
+    {
+      "id": "R-005",
+      "name": "Vertex Retail gate hours, and never a failed delivery",
+      "hard": true,
+      "scope": "client_delivery",
+      "statement": "Vertex Retail's Ludhiana warehouse accepts 08:00-18:00 only. A vehicle that would arrive after 18:00 is held at the last halt and delivered at 08:00 the next morning, with the client coordinator informed the previous evening. This is recorded as a scheduled morning delivery and never as a failed or attempted delivery.",
+      "params": { "client": "Vertex Retail", "gate_open": "08:00", "gate_close": "18:00", "site": "Ludhiana", "forbidden_status": "FAILED_DELIVERY", "required_status": "SCHEDULED_MORNING_DELIVERY" },
+      "citations": ["dispatcher_interview.txt:L24"],
+      "corroboration": ["emails/thread_09_vertex_gate.txt:L8", "emails/thread_10_vertex_gate.txt:L8", "emails/thread_11_vertex_ops.txt:L6"],
+      "rationale": "Marking it failed makes Vertex's system auto-generate a penalty note, and two finance teams then argue for a month over Rs 4,000.",
+      "assumptions": []
+    },
+    {
+      "id": "R-006",
+      "name": "Apex Chemicals vehicle rotation after an incident",
+      "hard": true,
+      "scope": "vehicle_eligibility",
+      "statement": "A vehicle that had any issue on an Apex Chemicals run - breakdown, late arrival, anything - must not be sent on the immediately next Apex dispatch. At least one different vehicle in between.",
+      "params": { "client": "Apex Chemicals", "min_dispatches_between": 1 },
+      "citations": ["dispatcher_interview.txt:L26"],
+      "corroboration": ["emails/thread_13_apex_rotation.txt:L8", "emails/thread_14_apex_rotation.txt:L8"],
+      "rationale": "Apex keep a gate register of plate numbers going back years. Their stores manager has already escalated one repeat.",
+      "assumptions": ["ASM-003"]
+    },
+    {
+      "id": "R-007",
+      "name": "Orion Pharma vehicles must be model year 2020 or later",
+      "hard": true,
+      "scope": "vehicle_eligibility",
+      "statement": "Every Orion Pharma consignment gets a vehicle of model year 2020 or later, verified against the RC. An older vehicle is rejected at their gate and the trip is wasted.",
+      "params": { "client": "Orion Pharma", "min_year": 2020, "verify_against": "fleet_master" },
+      "citations": ["dispatcher_interview.txt:L28"],
+      "corroboration": ["emails/thread_17_orion_age.txt:L8", "emails/thread_18_orion_age.txt:L8"],
+      "rationale": "Pharma audit requirement. A 2019 vehicle was rejected at their gate on 29 Jun 2026.",
+      "assumptions": []
+    },
+    {
+      "id": "R-008",
+      "name": "Orion Pharma loads never wait unrefrigerated overnight",
+      "hard": true,
+      "scope": "client_delivery",
+      "statement": "An Orion Pharma load must not be held at a hub overnight without refrigeration. A recovery plan that parks an Orion load at a hub past midnight is not acceptable.",
+      "params": { "client": "Orion Pharma", "max_hub_hold_overnight": false },
+      "citations": ["dispatcher_interview.txt:L28"],
+      "rationale": "Cold-chain integrity; stated by the dispatcher as part of Orion's absolute rule.",
+      "assumptions": []
+    },
+    {
+      "id": "R-009",
+      "name": "Monsoon padding on eastern routes",
+      "hard": false,
+      "scope": "eta",
+      "statement": "July to September inclusive, for any destination east of Lucknow, add 20 percent to the computed transit time and quote the padded figure to the client upfront. No standard SLA promise on eastern routes in monsoon.",
+      "params": { "months": [7, 8, 9], "padding_pct": 20, "region": "east_of_lucknow" },
+      "citations": ["dispatcher_interview.txt:L32"],
+      "corroboration": ["emails/thread_23_internal_monsoon.txt:L8"],
+      "rationale": "Waterlogging and diversions make the OSRM number fiction. A client told 52 and given 50 is happy; told 44 and given 50 writes emails.",
+      "assumptions": ["ASM-006"]
+    },
+    {
+      "id": "R-010",
+      "name": "Within 50 km of origin, the origin hub sends the replacement",
+      "hard": true,
+      "scope": "replacement_sourcing",
+      "statement": "If a vehicle breaks down within 50 km of its origin hub, the replacement comes from the origin hub - not the nearest hub. Beyond 50 km, the nearest hub with an eligible vehicle sends.",
+      "params": { "threshold_km": 50 },
+      "citations": ["dispatcher_interview.txt:L36", "dispatcher_interview.txt:L54"],
+      "rationale": "Small hubs are held in reserve for premium client dispatches (Orion, Shakti). Emptying one for a nearby breakdown creates a second fire. Named by the dispatcher as one of his three keep-forever rules.",
+      "assumptions": ["ASM-007"]
+    },
+    {
+      "id": "R-011",
+      "name": "Overdue service grounds a vehicle absolutely",
+      "hard": true,
+      "scope": "vehicle_eligibility",
+      "statement": "Any vehicle more than 30 days past its due service date is grounded and does not move, regardless of the emergency.",
+      "params": { "grace_days": 30 },
+      "citations": ["dispatcher_interview.txt:L38", "dispatcher_interview.txt:L54"],
+      "rationale": "An overdue truck sent on an emergency becomes the next emergency. Named by the dispatcher as one of his three keep-forever rules.",
+      "assumptions": ["ASM-001"],
+      "data_gap": "No source contains a service due date. See ASM-001: every verdict from this rule is marked derived and is not presented as fact."
+    },
+    {
+      "id": "R-012",
+      "name": "A jugaad fix is a seven-day clock",
+      "hard": true,
+      "scope": "vehicle_eligibility",
+      "statement": "A vehicle running on a temporary (jugaad) roadside fix must get a permanent repair within seven days, and until that repair is recorded it may not leave its home region.",
+      "params": { "window_days": 7, "restriction": "home_region_only" },
+      "citations": ["dispatcher_interview.txt:L42"],
+      "corroboration": ["emails/thread_25_internal_jugaad.txt:L8"],
+      "rationale": "The fixes hold like a promise, not like a part. Twice a patched truck was sent long-distance and died both times.",
+      "assumptions": []
+    },
+    {
+      "id": "R-013",
+      "name": "Drivers under six months never run solo at night",
+      "hard": true,
+      "scope": "driver_eligibility",
+      "statement": "A driver with less than six months' service must not be assigned a solo night run. Pair them with an experienced driver or move the dispatch to daytime.",
+      "params": { "min_tenure_months": 6, "night_window": ["21:00", "05:00"] },
+      "citations": ["dispatcher_interview.txt:L46"],
+      "corroboration": ["emails/thread_24_internal_nightroster.txt:L8"],
+      "rationale": "Not about skill. New drivers do not know the roads, the dhabas, which stretch has the check post, or whom to call at 2 am.",
+      "assumptions": []
+    }
+  ],
+
+  "regions": {
+    "delhi_ncr": ["Delhi", "Gurgaon", "Faridabad", "Noida", "Ghaziabad"],
+    "hill": ["Rudrapur", "Nainital", "Haldwani", "Almora"],
+    "east_of_lucknow": ["Allahabad", "Varanasi", "Gorakhpur", "Patna", "Muzaffarpur", "Durgapur", "Kolkata"]
+  },
+
+  "clients": {
+    "Shakti Cement": {
+      "sla_hours": 36,
+      "contract_sla_hours": 48,
+      "role_mailbox": "dispatch@shakticement.example.in",
+      "rules": ["R-004"]
+    },
+    "Vertex Retail": {
+      "sla_hours": null,
+      "gate_hours": { "site": "Ludhiana", "open": "08:00", "close": "18:00" },
+      "role_mailbox": "logistics@vertexretail.example.in",
+      "rules": ["R-005"]
+    },
+    "Apex Chemicals": {
+      "sla_hours": null,
+      "role_mailbox": "stores@apexchem.example.in",
+      "rules": ["R-006"]
+    },
+    "Orion Pharma": {
+      "sla_hours": null,
+      "min_vehicle_year": 2020,
+      "role_mailbox": "scm@orionpharma.example.in",
+      "rules": ["R-007", "R-008"]
+    },
+    "Internal": {
+      "sla_hours": null,
+      "role_mailbox": "ops@meridianfreight.example.in",
+      "rules": []
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "$comment": "Names that must be masked but cannot be derived from a structured column. Copy this file to config/pii_names.local.json and fill in the real values for your install; the .local.json file is gitignored so no real person's name ever enters version control. Most names are discovered automatically at ingest - from the driver roster, the maintenance log's mechanic column, and the interview header - so this list only needs the stragglers: people who appear only inside free-text sign-offs.",
+  "$how_to_populate": "Run `node run.js pii-scan`. It reports name-shaped tokens in the corpus that the automatic extractors did not already cover, so you can review and add them here.",
+  "names": [
+    "Firstname Lastname",
+    "Firstname"
+  ]
+}

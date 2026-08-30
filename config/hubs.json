@@ -1,0 +1,23 @@
+{
+  "$comment": "Hub adjacency used only when a breakdown is beyond 50 km of its origin hub and rule R-010 falls through to 'nearest hub with an eligible vehicle'. There is no distance matrix anywhere in the client bundle (see ASM-007). These are hand-estimated road distances between the nine hub cities, in km. Any decision that uses them is marked derived:true and cites ASM-007. Replace this file with the client's own matrix and the derived flag goes away.",
+  "unit": "km",
+  "source": "estimated",
+  "distances": {
+    "Delhi":      { "Gurgaon": 32,  "Ambala": 200, "Chandigarh": 245, "Ludhiana": 310, "Jaipur": 280, "Lucknow": 500, "Kanpur": 440, "Rudrapur": 250 },
+    "Gurgaon":    { "Delhi": 32,   "Ambala": 230, "Chandigarh": 275, "Ludhiana": 340, "Jaipur": 245, "Lucknow": 530, "Kanpur": 470, "Rudrapur": 285 },
+    "Ambala":     { "Delhi": 200,  "Gurgaon": 230, "Chandigarh": 50, "Ludhiana": 110, "Jaipur": 470, "Lucknow": 640, "Kanpur": 620, "Rudrapur": 300 },
+    "Chandigarh": { "Delhi": 245,  "Gurgaon": 275, "Ambala": 50,  "Ludhiana": 100, "Jaipur": 520, "Lucknow": 690, "Kanpur": 670, "Rudrapur": 340 },
+    "Ludhiana":   { "Delhi": 310,  "Gurgaon": 340, "Ambala": 110, "Chandigarh": 100, "Jaipur": 600, "Lucknow": 760, "Kanpur": 740, "Rudrapur": 430 },
+    "Jaipur":     { "Delhi": 280,  "Gurgaon": 245, "Ambala": 470, "Chandigarh": 520, "Ludhiana": 600, "Lucknow": 570, "Kanpur": 570, "Rudrapur": 530 },
+    "Lucknow":    { "Delhi": 500,  "Gurgaon": 530, "Ambala": 640, "Chandigarh": 690, "Ludhiana": 760, "Jaipur": 570, "Kanpur": 90,  "Rudrapur": 330 },
+    "Kanpur":     { "Delhi": 440,  "Gurgaon": 470, "Ambala": 620, "Chandigarh": 670, "Ludhiana": 740, "Jaipur": 570, "Lucknow": 90,  "Rudrapur": 420 },
+    "Rudrapur":   { "Delhi": 250,  "Gurgaon": 285, "Ambala": 300, "Chandigarh": 340, "Ludhiana": 430, "Jaipur": 530, "Lucknow": 330, "Kanpur": 420 }
+  },
+  "regions": {
+    "Delhi": "NCR", "Gurgaon": "NCR",
+    "Ambala": "Haryana-Punjab", "Chandigarh": "Haryana-Punjab", "Ludhiana": "Haryana-Punjab",
+    "Jaipur": "Rajasthan",
+    "Lucknow": "UP", "Kanpur": "UP",
+    "Rudrapur": "Uttarakhand"
+  }
+}

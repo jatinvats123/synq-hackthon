@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# Secrets. Never commit.
+# ---------------------------------------------------------------------------
+# Per-install HMAC key used to pseudonymise personal data. If this leaks, the
+# pseudonyms in data/context.json become reversible by brute force.
+state/pii_secret
+# Local denylist of names that must be masked but are not in a structured column.
+config/pii_names.local.json
+.env
+*.pem
+*.key
+
+# ---------------------------------------------------------------------------
+# Client data bundle - deliberately NOT committed.
+# ---------------------------------------------------------------------------
+# drivers_roster.csv carries names, mobile numbers, driving licence numbers and
+# Aadhaar numbers for 60 people. maintenance_log.xlsx and the email corpus carry
+# names and a mobile number in free text. Committing any of it would push
+# personal data into git history, where it cannot be deleted - which is the same
+# failure the pipeline's redaction layer exists to prevent, just slower.
+#
+# To run: drop the candidate bundle into the repo root. See README.md.
+fleet_master.csv
+drivers_roster.csv
+meridian_trips.csv
+maintenance_log.xlsx
+tickets.json
+tickets_*.json
+dispatcher_interview.txt
+emails/
+CANDIDATE_README.md
+Synq_AI_*.pdf
+Synq_AI_*.pptx
+
+# ---------------------------------------------------------------------------
+# Generated at runtime. Reproduced by `node run.js all`.
+# ---------------------------------------------------------------------------
+data/
+outputs/
+audit/
+logs/
+state/ledger.json
+
+# ---------------------------------------------------------------------------
+# Editor / OS noise
+# ---------------------------------------------------------------------------
+~$*
+.DS_Store
+Thumbs.db
+node_modules/
+*.tmp

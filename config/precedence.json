@@ -1,0 +1,73 @@
+{
+  "$comment": "Documented precedence for every field where Meridian's sources disagree. The pipeline reads this file; it is not hard-coded in the resolver. Each rule cites the evidence that justifies it so an evaluator can audit the choice, not just the outcome.",
+
+  "source_tiers": {
+    "fleet_master": {
+      "tier": 1,
+      "authority_for": ["year", "bs_stage", "model", "capacity_tonnes", "home_hub", "status", "engine_heater"],
+      "why": "Transcribed from the RC (registration certificate). Orion Pharma verify vehicle year against the RC copy at their gate, so the RC is the only reading that has operational consequences.",
+      "evidence": ["email:thread_17_orion_age.txt", "email:thread_21_internal_yearconflict.txt", "interview:orion_vehicle_age"]
+    },
+    "maintenance_log": {
+      "tier": 1,
+      "authority_for": ["odometer_km", "last_service_date", "brake_work", "jugaad_fix"],
+      "why": "Workshop entries are made against the odometer photo. Ops explicitly ruled the workshop reading the reference over hub yard checks.",
+      "evidence": ["email:thread_22_internal_odoconflict.txt"]
+    },
+    "meridian_trips": {
+      "tier": 2,
+      "authority_for": ["trip_history", "client_assignment_history", "route_timing"],
+      "why": "System of record for what actually moved, but it carries no vehicle attributes."
+    },
+    "drivers_roster": {
+      "tier": 1,
+      "authority_for": ["joining_date", "driver_home_hub"],
+      "why": "HR system of record; drives the six-month night-solo eligibility rule."
+    },
+    "tickets": {
+      "tier": 3,
+      "authority_for": ["incident_facts"],
+      "why": "Authoritative that an incident happened and where, but its vehicle/driver fields are free-typed and must be resolved against the masters before use."
+    },
+    "emails": {
+      "tier": 4,
+      "authority_for": ["client_commercial_rules"],
+      "why": "Authoritative for what a client has committed to (SLA windows, gate timings, rotation demands). NOT authoritative for vehicle or asset facts - hub staff misquote the fleet master in them.",
+      "evidence": ["email:thread_21_internal_yearconflict.txt"]
+    },
+    "dispatcher_interview": {
+      "tier": 1,
+      "authority_for": ["operating_rules"],
+      "why": "The only written record of the real dispatch rulebook. Superseded only by a client email that states a stricter commitment."
+    }
+  },
+
+  "field_rules": [
+    {
+      "entity": "vehicle",
+      "field": "year",
+      "strategy": "prefer_row_with_vehicle_id",
+      "why": "Where fleet_master.csv holds two rows for one registration, the row carrying an MF- vehicle_id is the master record; the id-less row is a re-import that was never reconciled. Confirmed by the id-less rows also being the ones missing capacity_tonnes and engine_heater.",
+      "on_unresolved": "flag_conflict_and_block_year_sensitive_decisions"
+    },
+    {
+      "entity": "vehicle",
+      "field": "*",
+      "strategy": "prefer_row_with_vehicle_id_then_most_complete",
+      "why": "Master row wins; where the master row is silent, fill the gap from the duplicate rather than discarding a known value."
+    },
+    {
+      "entity": "vehicle",
+      "field": "odometer_km",
+      "strategy": "latest_workshop_reading_by_date",
+      "why": "Workshop odometer photo is the reference. Readings that decrease over time are surfaced as a data-quality conflict, not silently averaged.",
+      "on_unresolved": "report_both_readings"
+    },
+    {
+      "entity": "vehicle",
+      "field": "registration_number",
+      "strategy": "canonical_uppercase_alphanumeric",
+      "why": "The same plate appears as UP40IM3144, UP-40-IM-3144 and 'UP 40 IM 3144' across five sources. Canonical key strips separators and uppercases; the display form is re-rendered in the standard XX-00-XX-0000 shape."
+    }
+  ]
+}

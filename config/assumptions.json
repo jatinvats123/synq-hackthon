@@ -1,0 +1,87 @@
+{
+  "$comment": "Every place where the data does not contain what a rule needs. These are assumptions, not facts. Each one is cited by id in the audit trail of any decision that relies on it, so an evaluator can see exactly which conclusions rest on an assumption and which rest on evidence. Changing a value here changes behaviour without touching code.",
+
+  "ASM-001": {
+    "name": "service_interval_days",
+    "value": 180,
+    "applies_to": "rule R-006 (overdue service grounds a vehicle)",
+    "gap": "No source in the bundle contains a service due date. maintenance_log.xlsx records what was done and an informal 'next check 10k km pe' in free text, but never a due date, and there is no current-odometer feed to turn a km interval into a date.",
+    "assumption": "Service is due 180 days after the last workshop visit recorded in the maintenance log.",
+    "confidence": "low",
+    "consequence": "Any 'grounded for overdue service' verdict is marked derived:true and carries this assumption id. The query interface answers 'insufficient data' to direct questions about a vehicle's service due date rather than quoting the derived value as fact.",
+    "how_to_fix": "One field from the client's workshop system (next_service_due_date per vehicle) removes this assumption entirely."
+  },
+
+  "ASM-002": {
+    "name": "as_of_date",
+    "value": "2026-08-30",
+    "applies_to": "all recency windows (30-day brake work, 7-day jugaad, 30-day overdue service, 6-month driver tenure)",
+    "gap": "The pipeline must evaluate 'in the last 30 days' relative to something. Using wall-clock time would make outputs differ between runs and break re-runnability.",
+    "assumption": "Recency is evaluated as-of a fixed date supplied by config or --as-of, defaulting to the latest event date present in the ingested corpus.",
+    "confidence": "high",
+    "consequence": "Deterministic outputs across re-runs. In production this becomes the ticket's own timestamp or the scheduler's run date.",
+    "how_to_fix": "Pass --as-of YYYY-MM-DD to evaluate the queue as of any date."
+  },
+
+  "ASM-003": {
+    "name": "trip_history_epoch",
+    "value": "2018-09-12..2018-10-03",
+    "applies_to": "rule R-004 (Apex vehicle rotation after an incident)",
+    "gap": "meridian_trips.csv covers three weeks of 2018. tickets.json covers 2026. The two do not overlap, so 'the very next Apex dispatch after an incident' cannot be reconstructed from trips for any ticket in the queue.",
+    "assumption": "Apex rotation is enforced using incident history from the ticket corpus (which is contemporaneous), with trips used only as a secondary signal for vehicle-client familiarity.",
+    "confidence": "medium",
+    "consequence": "Rotation exclusions are grounded in tickets, and the audit records that trips could not contribute. No fabricated 2026 dispatch history.",
+    "how_to_fix": "A trips extract covering the ticket period."
+  },
+
+  "ASM-004": {
+    "name": "delhi_ncr_routes",
+    "value": ["Delhi", "Gurgaon", "Faridabad", "Noida", "Ghaziabad"],
+    "applies_to": "rule R-001 (BS4 ban on Delhi NCR routes, Oct-Feb)",
+    "gap": "The interview names Delhi, Gurgaon, Faridabad and Noida. No source defines the NCR boundary as data.",
+    "assumption": "A route 'touches Delhi NCR' if its origin hub or destination is any of the listed cities. Ghaziabad added as it is inside the same GRAP enforcement area.",
+    "confidence": "high",
+    "consequence": "Ghaziabad never appears in the current corpus, so this addition changes no current decision. Listed for transparency."
+  },
+
+  "ASM-005": {
+    "name": "hill_routes",
+    "value": ["Rudrapur", "Nainital", "Haldwani", "Almora"],
+    "applies_to": "rule R-002 (engine heater and 30-day brake-work bar on hill routes, Nov-Feb)",
+    "gap": "The interview says 'Rudrapur, and anything going up toward Nainital side from there'. No route classification exists in the data.",
+    "assumption": "Rudrapur and the named hill destinations classify a route as a hill route.",
+    "confidence": "medium",
+    "consequence": "A route to a hill town not on this list would not trigger the heater/brake rules. Flagged in the report as needing the client's own route master."
+  },
+
+  "ASM-006": {
+    "name": "east_of_lucknow",
+    "value": ["Kanpur_exclusive", "Allahabad", "Varanasi", "Gorakhpur", "Patna", "Muzaffarpur", "Durgapur", "Kolkata"],
+    "applies_to": "rule R-008 (monsoon 20 percent ETA padding, Jul-Sep)",
+    "gap": "'East of Lucknow' is a geography, not a field. The corpus has no coordinates.",
+    "assumption": "Explicit allow-list of eastern destinations. Kanpur is south-west of Lucknow and is deliberately NOT treated as east.",
+    "confidence": "medium",
+    "consequence": "Monsoon padding applies only to listed destinations. No destination in the current queue is east of Lucknow, so this rule fires zero times on the main queue - stated openly rather than stretched to look active."
+  },
+
+  "ASM-007": {
+    "name": "hub_distances_km",
+    "value": "absent",
+    "applies_to": "replacement vehicle selection when the breakdown is beyond 50 km of origin ('nearest hub with an eligible vehicle')",
+    "gap": "There is no hub-to-hub distance matrix, and no coordinates for the hubs.",
+    "assumption": "A static adjacency table hand-built from the nine hub cities (config/hubs.json) approximates 'nearest hub'. Distances are road-distance estimates, not measured.",
+    "confidence": "low",
+    "consequence": "Beyond-50km selections mark the hub choice derived:true and cite this assumption. The selected vehicle's eligibility is still fully evidenced; only the hub ordering is approximate.",
+    "how_to_fix": "The client's own hub distance matrix, or geocodes plus a routing call."
+  },
+
+  "ASM-008": {
+    "name": "message_recipients",
+    "value": "role_mailboxes_only",
+    "applies_to": "outbound client communications",
+    "gap": "Named client contacts appear in the email corpus. Using them would place personal data in an outbound action.",
+    "assumption": "Outbound drafts address the client's role mailbox only, never a named individual, and bodies never contain a person's name, phone, or any identifier.",
+    "confidence": "high",
+    "consequence": "Recipient is a routing address on file, not personal data."
+  }
+}
